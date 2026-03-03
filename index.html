@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Performance Dashboard Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f6f9;
+    margin: 0;
+    padding: 20px;
+}
+h1 { text-align: center; }
+.dashboard {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin-top: 30px;
+}
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e0e0e0;
+}
+.card h2 { margin-top: 0; font-size: 18px; color: #333; }
+.metric { font-size: 36px; font-weight: bold; margin: 10px 0; }
+.description { font-size: 14px; color: #666; }
+.good { color: green; }
+.warning { color: orange; }
+.bad { color: red; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+table, th, td { border: 1px solid #ddd; }
+th, td { padding: 8px; text-align: center; }
+th { background-color: #f0f0f0; }
+input { width: 100%; padding: 6px; margin-bottom: 10px; }
+table input { width: 90% }
+table select { padding: 4px; }
+button { padding: 8px 12px; margin: 5px 0; cursor: pointer; }
+#reportSection { margin-top: 40px; }
+.report-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+.avatar {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #ddd;
+}
+</style>
+</head>
+<body>
+
+<h1>Performance Dashboard Generator</h1>
+
+<h2>Reporter Information</h2>
+<div style="max-width: 500px;">
+    <input type="text" id="reporterName" placeholder="Full Name">
+    <input type="text" id="reporterPosition" placeholder="Position / Role">
+    <label for="reportDate" style="font-size:14px;color:#555;">Report Date</label>
+    <input type="date" id="reportDate">
+    <input type="file" id="reporterAvatar" accept="image/*">
+</div>
+
+<h2>Input Tasks</h2>
+<table id="inputTable">
+<tr>
+    <th>Project</th>
+    <th>Task</th>
+    <th>Status</th>
+    <th>Late (h)</th>
+    <th>Est. (h)</th>
+    <th>Act. (h)</th>
+    <th>Reopen</th>
+</tr>
+</table>
+
+<button onclick="addRow()">Add Task</button>
+<button onclick="generateReport()">Generate Report</button>
+<button onclick="exportPDF()">Export PDF</button>
+<button onclick="exportExcel()">Export Excel</button>
+
+<div id="reportSection"></div>
+
+<script>
+let avatarBase64 = '';
+
+document.getElementById('reporterAvatar').addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            avatarBase64 = e.target.result;
+        }
+        reader.readAsDataURL(file);
+    }
+});
+
+function addRow(project='', task='', status='Completed', lateHrs=0, est='', act='', reopen=false) {
+    const table = document.getElementById('inputTable');
+    const row = table.insertRow();
+    row.innerHTML = `
+        <td><input type="text" value="${project}"></td>
+        <td><input type="text" value="${task}"></td>
+        <td>
+            <select>
+                <option ${status === 'Completed' ? 'selected' : ''}>Completed</option>
+                <option ${status === 'In Progress' ? 'selected' : ''}>In Progress</option>
+                <option ${status === 'To Do' ? 'selected' : ''}>To Do</option>
+            </select>
+        </td>
+        <td><input type="number" value="${lateHrs}" min="0"></td>
+        <td><input type="number" value="${est}"></td>
+        <td><input type="number" value="${act}"></td>
+        <td><input type="checkbox" ${reopen ? 'checked' : ''}></td>
+    `;
+}
+
+// Default sample rows
+addRow('AntKing', 'Login API Integration', 'Completed', 0, 8, 9);
+addRow('AntKing', 'QR Code Session Handling', 'Completed', 2, 12, 14);
+addRow('AntKing', 'Proxy Status Monitoring', 'In Progress', 0, 10, 11);
+addRow('AntKing', 'Access Token Refresh Logic', 'Completed', 0, 10, 11);
+
+function generateReport() {
+    const name = document.getElementById('reporterName').value || 'N/A';
+    const position = document.getElementById('reporterPosition').value || 'N/A';
+    const reportDateVal = document.getElementById('reportDate').value;
+    const reportDateDisplay = reportDateVal
+        ? new Date(reportDateVal).toLocaleDateString('en-GB')
+        : new Date().toLocaleDateString('en-GB');
+
+    const rows = document.querySelectorAll('#inputTable tr');
+    let totalEstimated = 0;
+    let totalActual = 0;
+    let totalTasks = 0;
+    let completed = 0;
+    let overdue = 0;
+    let reopenCount = 0;
+    let tableRows = '';
+
+    rows.forEach((row, index) => {
+        if(index === 0) return;
+        const inputs = row.querySelectorAll('input');
+        const select = row.querySelector('select');
+        const project = inputs[0].value;
+        const task = inputs[1].value;
+        const status = select.value;
+        const lateHrs = parseFloat(inputs[2].value) || 0;
+        const est = parseFloat(inputs[3].value) || 0;
+        const act = parseFloat(inputs[4].value) || 0;
+        const isReopen = inputs[5].checked;
+
+        if(task.trim() !== '') {
+            totalTasks++;
+            if(status === 'Completed') completed++;
+            if(lateHrs > 0) overdue++;
+            if(isReopen) reopenCount++;
+            totalEstimated += est;
+            totalActual += act;
+            tableRows += `<tr><td>${project}</td><td>${task}</td><td>${status}</td><td>${lateHrs}</td><td>${est}</td><td>${act}</td><td>${isReopen ? 'Yes' : 'No'}</td></tr>`;
+        }
+    });
+
+    const reopenRate = totalTasks > 0 ? ((reopenCount / totalTasks) * 100).toFixed(0) : 0;
+    const accuracy = totalEstimated > 0 ? (100 - (Math.abs(totalActual - totalEstimated)/totalEstimated*100)).toFixed(0) : 0;
+
+    document.getElementById('reportSection').innerHTML = `
+    <div id="pdfContent" style="padding: 10px 20px;">
+        <h1>${name !== 'N/A' ? name + ' — ' : ''}Performance Report — ${reportDateDisplay}</h1>
+
+        <div class="report-header">
+            ${avatarBase64 ? `<img src="${avatarBase64}" class="avatar">` : ''}
+            <div>
+                <strong>Name:</strong> ${name}<br>
+                <strong>Position:</strong> ${position}
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <div class="card">
+                <h2>My Completed Issues</h2>
+                <div class="metric good">${completed}</div>
+                <div class="description">${completed} of ${totalTasks} tasks completed.</div>
+            </div>
+
+            <div class="card">
+                <h2>My Overdue Issues</h2>
+                <div class="metric bad">${overdue}</div>
+                <div class="description">Tasks with late hours > 0.</div>
+            </div>
+
+            <div class="card">
+                <h2>My Reopen Rate</h2>
+                <div class="metric warning">${reopenRate}%</div>
+                <div class="description">${reopenCount} of ${totalTasks} tasks reopened.</div>
+            </div>
+
+            <div class="card">
+                <h2>My Estimate Accuracy</h2>
+                <div class="metric good">${accuracy}%</div>
+                <div class="description">Estimated: ${totalEstimated}h | Actual: ${totalActual}h</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:30px;">
+            <h2>Estimate Details</h2>
+            <table>
+                <tr>
+                    <th>Project</th>
+                    <th>Task</th>
+                    <th>Status</th>
+                    <th>Late (h)</th>
+                    <th>Est. (h)</th>
+                    <th>Act. (h)</th>
+                    <th>Reopen</th>
+                </tr>
+                ${tableRows}
+            </table>
+        </div>
+    </div>
+
+    `;
+}
+
+function exportPDF() {
+    generateReport();
+    setTimeout(() => {
+        const element = document.getElementById('pdfContent');
+        const name = document.getElementById('reporterName').value.trim();
+        const dateVal = document.getElementById('reportDate').value;
+        const dateStr = dateVal ? dateVal.replace(/-/g, '') : 'undated';
+        const nameStr = name ? name.replace(/\s+/g, '_') : 'Report';
+        const fileName = `${nameStr}_Performance_${dateStr}.pdf`;
+        const opt = {
+            margin:       [10, 10, 10, 10],
+            filename:     fileName,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, scrollY: 0, windowWidth: element.scrollWidth },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak:    { mode: ['avoid-all', 'css', 'legacy'] }
+        };
+        html2pdf().set(opt).from(element).save();
+    }, 500);
+}
+
+function exportExcel() {
+    const name = document.getElementById('reporterName').value.trim() || 'N/A';
+    const position = document.getElementById('reporterPosition').value.trim() || 'N/A';
+    const dateVal = document.getElementById('reportDate').value;
+    const reportDateDisplay = dateVal
+        ? new Date(dateVal).toLocaleDateString('en-GB')
+        : new Date().toLocaleDateString('en-GB');
+
+    const rows = document.querySelectorAll('#inputTable tr');
+    let totalEstimated = 0, totalActual = 0, totalTasks = 0;
+    let completed = 0, overdue = 0, reopenCount = 0;
+    const details = [];
+
+    rows.forEach((row, index) => {
+        if(index === 0) return;
+        const inputs = row.querySelectorAll('input');
+        const select = row.querySelector('select');
+        const project = inputs[0].value;
+        const task = inputs[1].value;
+        const status = select.value;
+        const lateHrs = parseFloat(inputs[2].value) || 0;
+        const est = parseFloat(inputs[3].value) || 0;
+        const act = parseFloat(inputs[4].value) || 0;
+        const isReopen = inputs[5].checked;
+
+        if(task.trim() !== '') {
+            totalTasks++;
+            if(status === 'Completed') completed++;
+            if(lateHrs > 0) overdue++;
+            if(isReopen) reopenCount++;
+            totalEstimated += est;
+            totalActual += act;
+            details.push({ Project: project, Task: task, Status: status, 'Late (h)': lateHrs, 'Est. (h)': est, 'Act. (h)': act, Reopen: isReopen ? 'Yes' : 'No' });
+        }
+    });
+
+    const reopenRate = totalTasks > 0 ? ((reopenCount / totalTasks) * 100).toFixed(0) : 0;
+    const accuracy = totalEstimated > 0 ? (100 - (Math.abs(totalActual - totalEstimated)/totalEstimated*100)).toFixed(0) : 0;
+
+    // Sheet 1: Summary
+    const summaryData = [
+        ['Performance Report'],
+        ['Name', name],
+        ['Position', position],
+        ['Report Date', reportDateDisplay],
+        [],
+        ['Metric', 'Value'],
+        ['Completed Issues', completed + ' / ' + totalTasks],
+        ['Overdue Issues', overdue],
+        ['Reopen Rate', reopenRate + '%'],
+        ['Estimate Accuracy', accuracy + '%'],
+        ['Total Estimated (h)', totalEstimated],
+        ['Total Actual (h)', totalActual]
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(summaryData);
+    ws1['!cols'] = [{ wch: 20 }, { wch: 20 }];
+
+    // Sheet 2: Details
+    const ws2 = XLSX.utils.json_to_sheet(details);
+    ws2['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Details');
+
+    const dateStr = dateVal ? dateVal.replace(/-/g, '') : 'undated';
+    const nameStr = name !== 'N/A' ? name.replace(/\s+/g, '_') : 'Report';
+    XLSX.writeFile(wb, `${nameStr}_Performance_${dateStr}.xlsx`);
+}
+</script>
+
+</body>
+</html>
