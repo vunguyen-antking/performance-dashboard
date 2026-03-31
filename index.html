@@ -252,6 +252,12 @@ table input[type="checkbox"] {
 .delete-row-btn:hover {
     background: #fee;
 }
+#inputTableBody tr.warning-row {
+    background: #fff8e1;
+}
+#inputTableBody tr.warning-row td {
+    border-bottom-color: #f5e6a3;
+}
 
 /* --- Action buttons --- */
 .actions-bar {
@@ -331,6 +337,63 @@ table input[type="checkbox"] {
 .report-table .col-number {
     text-align: right;
 }
+#inputTable th.sortable {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    padding-right: 20px;
+}
+#inputTable th.sortable:hover {
+    background: #ebedf0;
+}
+#inputTable th.sortable::after {
+    content: '⇅';
+    position: absolute;
+    right: 4px;
+    font-size: 11px;
+    color: #aaa;
+}
+#inputTable th.sortable.asc::after {
+    content: '▲';
+    color: #2c6ecf;
+}
+#inputTable th.sortable.desc::after {
+    content: '▼';
+    color: #2c6ecf;
+}
+#inputTable tfoot td {
+    border-top: 2px solid #ddd;
+    font-size: 14px;
+}
+.report-table tfoot td {
+    border-top: 2px solid #ddd;
+    font-weight: 700;
+    font-size: 14px;
+}
+.report-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    padding-right: 20px;
+}
+.report-table th.sortable:hover {
+    background: #ebedf0;
+}
+.report-table th.sortable::after {
+    content: '⇅';
+    position: absolute;
+    right: 4px;
+    font-size: 11px;
+    color: #aaa;
+}
+.report-table th.sortable.asc::after {
+    content: '▲';
+    color: #2c6ecf;
+}
+.report-table th.sortable.desc::after {
+    content: '▼';
+    color: #2c6ecf;
+}
 .card {
     background: white;
     padding: 20px;
@@ -398,16 +461,28 @@ table input[type="checkbox"] {
 <div class="section-card">
     <h2>Input Tasks</h2>
     <table id="inputTable">
+    <thead>
     <tr>
-        <th>Project</th>
-        <th>Task</th>
-        <th>Status</th>
-        <th>Late (h)</th>
-        <th>Est. (h)</th>
-        <th>Act. (h)</th>
+        <th class="sortable" data-col="0" data-type="string" onclick="sortInputTable(this)">Project</th>
+        <th class="sortable" data-col="1" data-type="string" onclick="sortInputTable(this)">Task</th>
+        <th class="sortable" data-col="2" data-type="string" onclick="sortInputTable(this)">Status</th>
+        <th class="sortable" data-col="3" data-type="number" onclick="sortInputTable(this)">Late (h)</th>
+        <th class="sortable" data-col="4" data-type="number" onclick="sortInputTable(this)">Est. (h)</th>
+        <th class="sortable" data-col="5" data-type="number" onclick="sortInputTable(this)">Act. (h)</th>
         <th>Reopen</th>
         <th></th>
     </tr>
+    </thead>
+    <tbody id="inputTableBody"></tbody>
+    <tfoot>
+    <tr id="inputTableFooter" style="font-weight:700; background:#f7f8fa;">
+        <td colspan="3" style="text-align:right;">Total</td>
+        <td><span id="totalLate">0</span></td>
+        <td><span id="totalEst">0</span></td>
+        <td><span id="totalAct">0</span></td>
+        <td colspan="2"></td>
+    </tr>
+    </tfoot>
     </table>
 
     <div class="actions-bar">
@@ -541,11 +616,11 @@ importZone.addEventListener('drop', function(e) {
 });
 
 function addRow(project='', task='', status='Completed', lateHrs=0, est='', act='', reopen=false) {
-    const table = document.getElementById('inputTable');
-    const row = table.insertRow();
+    const tbody = document.getElementById('inputTableBody');
+    const row = tbody.insertRow();
     row.innerHTML = `
         <td><input type="text" value="${project}"></td>
-        <td><input type="text" value="${task}"></td>
+        <td><input type="text" value="${task}" oninput="updateInputTotals()"></td>
         <td>
             <select>
                 <option ${status === 'Completed' ? 'selected' : ''}>Completed</option>
@@ -553,12 +628,35 @@ function addRow(project='', task='', status='Completed', lateHrs=0, est='', act=
                 <option ${status === 'To Do' ? 'selected' : ''}>To Do</option>
             </select>
         </td>
-        <td><input type="number" value="${lateHrs}" min="0"></td>
-        <td><input type="number" value="${est}"></td>
-        <td><input type="number" value="${act}"></td>
+        <td><input type="number" value="${lateHrs}" min="0" onchange="updateInputTotals()" oninput="updateInputTotals()"></td>
+        <td><input type="number" value="${est}" onchange="updateInputTotals()" oninput="updateInputTotals()"></td>
+        <td><input type="number" value="${act}" onchange="updateInputTotals()" oninput="updateInputTotals()"></td>
         <td><input type="checkbox" ${reopen ? 'checked' : ''}></td>
-        <td><button class="delete-row-btn" onclick="this.closest('tr').remove()">&times;</button></td>
+        <td><button class="delete-row-btn" onclick="this.closest('tr').remove(); updateInputTotals();">&times;</button></td>
     `;
+    updateInputTotals();
+}
+
+function updateInputTotals() {
+    const rows = document.querySelectorAll('#inputTableBody tr');
+    let totalLate = 0, totalEst = 0, totalAct = 0;
+    rows.forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        const task = inputs[1].value.trim();
+        const est = parseFloat(inputs[3].value) || 0;
+        totalLate += parseFloat(inputs[2].value) || 0;
+        totalEst += est;
+        totalAct += parseFloat(inputs[4].value) || 0;
+        // Highlight row if task is not empty and Est = 0
+        if (task !== '' && est === 0) {
+            row.classList.add('warning-row');
+        } else {
+            row.classList.remove('warning-row');
+        }
+    });
+    document.getElementById('totalLate').textContent = totalLate;
+    document.getElementById('totalEst').textContent = totalEst;
+    document.getElementById('totalAct').textContent = totalAct;
 }
 
 function generateReport() {
@@ -569,17 +667,17 @@ function generateReport() {
         ? new Date(reportDateVal).toLocaleDateString('en-GB')
         : new Date().toLocaleDateString('en-GB');
 
-    const rows = document.querySelectorAll('#inputTable tr');
+    const rows = document.querySelectorAll('#inputTableBody tr');
     let totalEstimated = 0;
     let totalActual = 0;
+    let totalLateHrs = 0;
     let totalTasks = 0;
     let completed = 0;
     let overdue = 0;
     let reopenCount = 0;
     let tableRows = '';
 
-    rows.forEach((row, index) => {
-        if(index === 0) return;
+    rows.forEach(row => {
         const inputs = row.querySelectorAll('input');
         const select = row.querySelector('select');
         const project = inputs[0].value;
@@ -597,6 +695,7 @@ function generateReport() {
             if(isReopen) reopenCount++;
             totalEstimated += est;
             totalActual += act;
+            totalLateHrs += lateHrs;
             tableRows += `<tr><td>${project}</td><td>${task}</td><td class="col-status">${status}</td><td class="col-number">${lateHrs}</td><td class="col-number">${est}</td><td class="col-number">${act}</td><td class="col-status">${isReopen ? 'Yes' : 'No'}</td></tr>`;
         }
     });
@@ -644,17 +743,30 @@ function generateReport() {
 
         <div class="card" style="margin-top:30px;">
             <h2>Estimate Details</h2>
-            <table class="report-table">
+            <table class="report-table" id="reportTable">
+                <thead>
                 <tr>
-                    <th>Project</th>
-                    <th>Task</th>
-                    <th class="col-status">Status</th>
-                    <th class="col-number">Late (h)</th>
-                    <th class="col-number">Est. (h)</th>
-                    <th class="col-number">Act. (h)</th>
-                    <th class="col-status">Reopen</th>
+                    <th class="sortable" data-col="0" data-type="string" onclick="sortReportTable(this)">Project</th>
+                    <th class="sortable" data-col="1" data-type="string" onclick="sortReportTable(this)">Task</th>
+                    <th class="col-status sortable" data-col="2" data-type="string" onclick="sortReportTable(this)">Status</th>
+                    <th class="col-number sortable" data-col="3" data-type="number" onclick="sortReportTable(this)">Late (h)</th>
+                    <th class="col-number sortable" data-col="4" data-type="number" onclick="sortReportTable(this)">Est. (h)</th>
+                    <th class="col-number sortable" data-col="5" data-type="number" onclick="sortReportTable(this)">Act. (h)</th>
+                    <th class="col-status sortable" data-col="6" data-type="string" onclick="sortReportTable(this)">Reopen</th>
                 </tr>
+                </thead>
+                <tbody>
                 ${tableRows}
+                </tbody>
+                <tfoot>
+                <tr>
+                    <td colspan="3" style="text-align:right; font-weight:700;">Total</td>
+                    <td class="col-number" style="font-weight:700;">${totalLateHrs}</td>
+                    <td class="col-number" style="font-weight:700;">${totalEstimated}</td>
+                    <td class="col-number" style="font-weight:700;">${totalActual}</td>
+                    <td></td>
+                </tr>
+                </tfoot>
             </table>
         </div>
     </div>
@@ -780,9 +892,9 @@ function processImportedData(rows) {
         }
     });
 
-    // Clear existing rows (keep header)
-    const table = document.getElementById('inputTable');
-    while (table.rows.length > 1) table.deleteRow(1);
+    // Clear existing rows
+    const tbody = document.getElementById('inputTableBody');
+    tbody.innerHTML = '';
 
     // Add imported rows
     Object.keys(grouped).forEach(key => {
@@ -801,13 +913,12 @@ function exportExcel() {
         ? new Date(dateVal).toLocaleDateString('en-GB')
         : new Date().toLocaleDateString('en-GB');
 
-    const rows = document.querySelectorAll('#inputTable tr');
+    const rows = document.querySelectorAll('#inputTableBody tr');
     let totalEstimated = 0, totalActual = 0, totalTasks = 0;
     let completed = 0, overdue = 0, reopenCount = 0;
     const details = [];
 
-    rows.forEach((row, index) => {
-        if(index === 0) return;
+    rows.forEach(row => {
         const inputs = row.querySelectorAll('input');
         const select = row.querySelector('select');
         const project = inputs[0].value;
@@ -861,6 +972,68 @@ function exportExcel() {
     const dateStr = dateVal ? dateVal.replace(/-/g, '') : 'undated';
     const nameStr = name !== 'N/A' ? name.replace(/\s+/g, '_') : 'Report';
     XLSX.writeFile(wb, `${nameStr}_Performance_${dateStr}.xlsx`);
+}
+
+function sortReportTable(th) {
+    const table = document.getElementById('reportTable');
+    const colIdx = parseInt(th.dataset.col);
+    const type = th.dataset.type;
+    const isAsc = th.classList.contains('asc');
+
+    table.querySelectorAll('th.sortable').forEach(h => h.classList.remove('asc', 'desc'));
+    th.classList.add(isAsc ? 'desc' : 'asc');
+    const dir = isAsc ? -1 : 1;
+
+    const tbody = table.tBodies[0] || table;
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    rows.sort((a, b) => {
+        const aVal = a.cells[colIdx].textContent.trim();
+        const bVal = b.cells[colIdx].textContent.trim();
+        if (type === 'number') {
+            return (parseFloat(aVal) - parseFloat(bVal)) * dir;
+        }
+        return aVal.localeCompare(bVal, 'vi') * dir;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+}
+
+function sortInputTable(th) {
+    const colIdx = parseInt(th.dataset.col);
+    const type = th.dataset.type;
+    const isAsc = th.classList.contains('asc');
+
+    document.querySelectorAll('#inputTable th.sortable').forEach(h => h.classList.remove('asc', 'desc'));
+    th.classList.add(isAsc ? 'desc' : 'asc');
+    const dir = isAsc ? -1 : 1;
+
+    const tbody = document.getElementById('inputTableBody');
+    const rows = Array.from(tbody.rows);
+
+    rows.sort((a, b) => {
+        let aVal, bVal;
+        if (colIdx <= 1) {
+            // text input
+            aVal = a.cells[colIdx].querySelector('input').value.trim();
+            bVal = b.cells[colIdx].querySelector('input').value.trim();
+        } else if (colIdx === 2) {
+            // select
+            aVal = a.cells[colIdx].querySelector('select').value;
+            bVal = b.cells[colIdx].querySelector('select').value;
+        } else {
+            // number input
+            aVal = a.cells[colIdx].querySelector('input').value;
+            bVal = b.cells[colIdx].querySelector('input').value;
+        }
+
+        if (type === 'number') {
+            return ((parseFloat(aVal) || 0) - (parseFloat(bVal) || 0)) * dir;
+        }
+        return aVal.localeCompare(bVal, 'vi') * dir;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
 }
 </script>
 
